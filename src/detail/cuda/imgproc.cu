@@ -27,6 +27,10 @@ __device__ float clip(float x, float max) {
     return fmin(fmax(x, 0.0f), max);
 }
 
+__device__ float normalize(float x, float mean, float std) {
+    return (x - mean) / std;
+}
+
 template<typename T>
 __device__ T convert(const float x) {
     return static_cast<T>(x);
@@ -44,7 +48,8 @@ __device__ uint8_t convert<uint8_t>(const float x) {
 
 template<typename YUV_T, typename RGB_T>
 __device__ void yuv2rgb(const yuv<YUV_T>& yuv, RGB_T* rgb,
-                        size_t stride, bool normalized) {
+                        size_t stride, bool normalized,
+                        const RGB_Pixel& mean, const RGB_Pixel& std) {
     auto mult = normalized ? 1.0f : 255.0f;
     auto y = (static_cast<float>(yuv.y) - 16.0f/255) * mult;
     auto u = (static_cast<float>(yuv.u) - 128.0f/255) * mult;
@@ -55,9 +60,9 @@ __device__ void yuv2rgb(const yuv<YUV_T>& yuv, RGB_T* rgb,
     // could get tricky with a lambda, but this branch seems faster
     float r, g, b;
     if (normalized) {
-        r = clip(y*m[0] + u*m[1] + v*m[2], 1.0);
-        g = clip(y*m[3] + u*m[4] + v*m[5], 1.0);
-        b = clip(y*m[6] + u*m[7] + v*m[8], 1.0);
+        r = normalize(clip(y*m[0] + u*m[1] + v*m[2], 1.0), mean.r, std.r);
+        g = normalize(clip(y*m[3] + u*m[4] + v*m[5], 1.0), mean.g, std.g);
+        b = normalize(clip(y*m[6] + u*m[7] + v*m[8], 1.0), mean.b, std.b);
     } else {
         r = clip(y*m[0] + u*m[1] + v*m[2], 255.0);
         g = clip(y*m[3] + u*m[4] + v*m[5], 255.0);
@@ -102,7 +107,7 @@ __global__ void process_frame_kernel(
 
     switch(dst.desc.color_space) {
         case ColorSpace_RGB:
-            yuv2rgb(yuv, out, dst.desc.stride.c, dst.desc.normalized);
+            yuv2rgb(yuv, out, dst.desc.stride.c, dst.desc.normalized, dst.desc.mean, dst.desc.std);
             break;
 
         case ColorSpace_YCbCr:

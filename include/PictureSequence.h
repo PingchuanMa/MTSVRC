@@ -74,6 +74,15 @@ enum NVVL_PicDataType {
 };
 
 /**
+ * Utility for processing RGB pixel format data
+ */
+struct RGB_Pixel {
+    float r;
+    float g;
+    float b;
+};
+
+/**
  * Description of a layer in a frame sequence.
  */
 struct NVVL_LayerDesc {
@@ -181,6 +190,14 @@ struct NVVL_LayerDesc {
         size_t c;
         size_t n;
     } stride;
+
+    /**
+     * Mean and standard variance for various RGB channels
+     * 
+     * Only useful for normal RGB color space.
+     */
+    struct RGB_Pixel mean;
+    struct RGB_Pixel std;
 
 };
 
