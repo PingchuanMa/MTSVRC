@@ -70,7 +70,8 @@ class ProcessDesc(object):
     def __init__(self, type="float",
                  width=0, height=0, scale_width=0, scale_height=0,
                  normalized=False, random_crop=False, random_flip=True,
-                 color_space="RGB", index_map=None, dimension_order="fchw"):
+                 color_space="RGB", index_map=None, dimension_order="fchw",
+                 mean=(0., 0., 0.), std=(1., 1., 1.)):
         self.ffi = lib._ffi
         self._desc = self.ffi.new("struct NVVL_LayerDesc*")
 
@@ -81,6 +82,9 @@ class ProcessDesc(object):
         self.normalized = normalized
         self.random_crop = random_crop
         self.random_flip = random_flip
+
+        self.mean.r, self.mean.g, self.mean.b = mean
+        self.std.r, self.std.g, self.std.b = std
 
         if index_map:
             self.index_map = self.ffi.new("int[]", index_map)
@@ -215,7 +219,7 @@ class VideoDataset(torch.utils.data.Dataset):
         self.frame_counts = []
         self.start_index = []
         for f in filenames:
-            count = lib.nvvl_frame_count(self.loader, str.encode(f));
+            count = lib.nvvl_frame_count(self.loader, str.encode(f))
             if count < self.sequence_length:
                 print("NVVL WARNING: Ignoring", f, "because it only has", count,
                       "frames and the sequence length is", self.sequence_length)

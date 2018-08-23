@@ -4,6 +4,41 @@ import torch
 from .dataset import VideoDataset
 
 
+class SingleVideoLoader(object):
+    """Loads batches of sequences of frames from a single video file.
+
+    Parameters
+    ----------
+
+    dataset : VideoDataset
+        dataset from which to load the frames, must be a
+        nvvl.VideoDataset.
+
+    batch_size : int, optional
+        how many samples (i.e. sequences) per batch to load (Default: 1)
+
+    shuffle : bool, optional
+        shuffle the order of samples (Default: False)
+
+    distributed : bool, optional
+        use a distributed sampler, requires shuffle (Default: False)
+
+    sampler : torch.utils.data.Sampler, optional
+        defines the strategy to draw samples from the
+        dataset. Mutually exclusive with shuffle and distributed.
+
+    batch_sampler : torch.utils.data.Sampler, optional
+        like sampler, but returns a batch of indices at a
+        time. Mutually exclusive with batch_size, shuffle,
+        distributed, sampler, and drop_last.
+
+    drop_last : bool, optional
+        drop the last incomplete batch. It is currently not
+        implemented to have this set to False. (Default: True)
+
+    """
+
+
 class VideoLoader(object):
     """Loads batches of sequences of frames from a video file. Meant to be
     nearly a drop-in replacement for a torch.util.data.DataLoader.
