@@ -180,6 +180,10 @@ int NvDecoder::handle_sequence_(CUVIDEOFORMAT* format) {
     // std::cout << "Frame base is " << format->frame_rate.denominator
     //           << " / " << format->frame_rate.numerator << std::endl;
     // std::cout << "handle_sequence" << std::endl;
+    if (format->frame_rate.denominator == 0) {
+        format->frame_rate.denominator = 1;
+        format->frame_rate.numerator = 30;
+    }
     frame_base_ = {static_cast<int>(format->frame_rate.denominator),
                    static_cast<int>(format->frame_rate.numerator)};
     return decoder_.initialize(format);
@@ -304,6 +308,9 @@ NvDecoder::TextureObject::operator cudaTextureObject_t() const {
 }
 
 int NvDecoder::handle_display_(CUVIDPARSERDISPINFO* disp_info) {
+    // std::cout << disp_info->timestamp << " " << nv_time_base_.num << " " <<
+    //              nv_time_base_.den << " " << frame_base_.num << " "<<
+    //              frame_base_.den << std::endl;
     auto frame = av_rescale_q(disp_info->timestamp,
                               nv_time_base_, frame_base_);
 
