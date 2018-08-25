@@ -69,17 +69,23 @@ class ProcessDesc(object):
 
     def __init__(self, type="float",
                  width=0, height=0, scale_width=0, scale_height=0,
-                 normalized=False, random_crop=False, random_flip=True,
+                 normalized=False, random_crop=False, random_flip=False,
                  color_space="RGB", index_map=None, dimension_order="fchw",
-                 mean=(0., 0., 0.), std=(1., 1., 1.)):
+                 center_crop=False, mean=(0., 0., 0.), std=(1., 1., 1.),
+                 scale_shorter_side=0):
         self.ffi = lib._ffi
         self._desc = self.ffi.new("struct NVVL_LayerDesc*")
 
+        # if shorter side scale is set, ignore other scale
         self.width = width
         self.height = height
         self.scale_width = scale_width
         self.scale_height = scale_height
+        self.scale_shorter_side = scale_shorter_side
         self.normalized = normalized
+
+        # if center crop is set, ignore other crop
+        self.center_crop = center_crop
         self.random_crop = random_crop
         self.random_flip = random_flip
 
@@ -126,8 +132,8 @@ class ProcessDesc(object):
             return self.width
         raise ValueError("Invalid dimension")
 
-    def get_dims(self):
-        dims = []
+    def get_dims(self, batch_size=1):
+        dims = [] if batch_size <= 0 else [batch_size]
         for d in self.dimension_order:
             dims.append(self._get_dim(d))
         return dims
@@ -155,7 +161,7 @@ log_levels = {
     "warn"  : lib.LogLevel_Warn,
     "error" : lib.LogLevel_Error,
     "none"  : lib.LogLevel_None
-    }
+}
 
 class VideoDataset(torch.utils.data.Dataset):
     """VideoDataset
@@ -354,7 +360,7 @@ class VideoDataset(torch.utils.data.Dataset):
         tensor_map = {}
         with torch.cuda.device(self.device_id):
             for name, desc in self.processing.items():
-                tensor_map[name] = desc.tensor_type(batch_size, *desc.get_dims())
+                tensor_map[name] = desc.tensor_type(*desc.get_dims(batch_size))
         return tensor_map
 
     def __getitem__(self, index):
@@ -386,3 +392,153 @@ class VideoDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.total_frames
+
+
+class SingleVideoLoader(object):
+    """Loads sequences of frames from a single video file.
+
+    Parameters
+    ----------
+    sequence_length : int
+        how many frames to draw
+
+    device_id : int, optional
+        GPU device to use (Default: 0)
+
+    processing : ProcessDesc, optional
+        Describes processing to be done on the sequence to generate
+        each data item. If None, each frame in the sequence will be
+        returned as is. (Default: None)
+
+    log_level : string, optional
+        One of "debug", "info", "warn", "error", or "none".
+        (Default: "warn")
+    """
+    def __init__(self, sequence_length, start_frame=0, device_id=0,
+                 processing=None, log_level="warn"):
+        self.ffi = lib._ffi
+        self.sequence_length = sequence_length
+        self.device_id = device_id
+        self.start_frame = start_frame
+        self.name = str.encode('pixels')
+
+        self.processing = processing
+        if self.processing is None:
+            self.processing = ProcessDesc()
+
+        try:
+            log_level = log_levels[log_level]
+        except KeyError:
+            print("Invalid log level", log_level, "using warn.", file=sys.stderr)
+            log_level = lib.LogLevel_Warn
+
+        if sequence_length < 1:
+            raise ValueError("Sequence length must be at least 1")
+
+        self.loader = lib.nvvl_create_video_loader_with_log(self.device_id, log_level)
+
+    def get_stats(self):
+        return lib.nvvl_get_stats(self.loader)
+
+    def reset_stats(self):
+        return lib.nvvl_reset_stats(self.loader)
+
+    def set_log_level(self, level):
+        """Sets the log level from now forward
+
+        Parameters
+        ----------
+        level : string
+            The log level, one of "debug", "info", "warn", "error", or "none"
+        """
+        lib.nvvl_set_log_level(self.loader, log_levels[level])
+
+    def video_frames(self, file_dir, use_batch=False):
+        size = lib.nvvl_video_size(self.loader)
+        self.width = size.width
+        self.height = size.height
+
+        if self.processing.width == 0:
+            self.processing.width = self.width
+
+        if self.processing.height == 0:
+            self.processing.height = self.height
+
+        if self.processing.count == 0:
+            self.processing.count = self.sequence_length
+
+        lib.nvvl_read_sequence(self.loader, str.encode(file_dir),
+                               self.start_frame, self.sequence_length)
+        tensor = self._create_tensor(use_batch)
+        seq = self._start_receive(tensor, use_batch)
+        self._finish_receive(seq)
+        return tensor
+
+    def _get_layer_desc(self, desc):
+        d = desc.desc()
+
+        if (desc.random_crop and (self.width > desc.width)):
+            d.crop_x = random.randint(0, self.width - desc.width)
+        else:
+            d.crop_x = 0
+
+        if (desc.random_crop and (self.height > desc.height)):
+            d.crop_y = random.randint(0, self.height - desc.height)
+        else:
+            d.crop_y = 0
+
+        if (desc.random_flip):
+            d.horiz_flip = random.random() < 0.5
+        else:
+            d.horiz_flip = False
+
+        return d
+
+    def _start_receive(self, tensor, use_batch=False):
+        seq = lib.nvvl_create_sequence_device(self.sequence_length, self.device_id)
+
+        if use_batch:
+            tensor = tensor[0]
+        layer = self.ffi.new("struct NVVL_PicLayer*")
+        if self.processing.tensor_type == torch.cuda.FloatTensor:
+            layer.type = lib.PDT_FLOAT
+        elif self.processing.tensor_type == torch.cuda.HalfTensor:
+            layer.type = lib.PDT_HALF
+        elif self.processing.tensor_type == torch.cuda.ByteTensor:
+            layer.type = lib.PDT_BYTE
+
+        strides = tensor.stride()
+        try:
+            self.processing.stride.x = strides[self.processing.dimension_order.index('w')]
+            self.processing.stride.y = strides[self.processing.dimension_order.index('h')]
+            self.processing.stride.n = strides[self.processing.dimension_order.index('f')]
+            self.processing.stride.c = strides[self.processing.dimension_order.index('c')]
+        except ValueError:
+            raise ValueError("Invalid dimension order")
+        layer.desc = self._get_layer_desc(self.processing)[0]
+        if self.processing.index_map_length > 0:
+            layer.index_map = self.processing.index_map
+            layer.index_map_length = self.processing.index_map_length
+        else:
+            layer.index_map = self.ffi.NULL
+        layer.data = self.ffi.cast("void*", tensor.data_ptr())
+        lib.nvvl_set_layer(seq, layer, self.name)
+
+        lib.nvvl_receive_frames(self.loader, seq)
+        return seq
+
+    def _finish_receive(self, seq, synchronous=False):
+        if synchronous:
+            lib.nvvl_sequence_wait(seq)
+        else:
+            lib.nvvl_sequence_stream_wait_th(seq)
+        lib.nvvl_free_sequence(seq)
+
+    def _create_tensor(self, use_batch=False):
+        with torch.cuda.device(self.device_id):
+            tensor = self.processing.tensor_type(
+                *self.processing.get_dims(1 if use_batch else 0))
+        return tensor
+
+    def __dealloc__(self):
+        lib.nvvl_destroy_video_loader(self.loader)

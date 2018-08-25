@@ -78,7 +78,7 @@ template<typename T>
 __global__ void process_frame_kernel(
     cudaTextureObject_t luma, cudaTextureObject_t chroma,
     PictureSequence::Layer<T> dst, int index,
-    float fx, float fy) {
+    float fx, float fy, uint16_t crop_x, uint16_t crop_y) {
 
     const int dst_x = blockIdx.x * blockDim.x + threadIdx.x;
     const int dst_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -88,9 +88,9 @@ __global__ void process_frame_kernel(
 
     auto src_x = 0.0f;
     if (dst.desc.horiz_flip) {
-        src_x = (dst.desc.width - dst.desc.crop_x - dst_x) * fx;
+        src_x = (dst.desc.width - crop_x - dst_x) * fx;
     } else {
-        src_x = (dst.desc.crop_x + dst_x) * fx;
+        src_x = (crop_x + dst_x) * fx;
     }
 
     auto src_y = static_cast<float>(dst_y + dst.desc.crop_y) * fy;
@@ -136,17 +136,37 @@ void process_frame(
         throw std::runtime_error("Output must be floating point to be normalized.");
     }
 
-    auto scale_width = output.desc.scale_width > 0 ? output.desc.scale_width : input_width;
-    auto scale_height = output.desc.scale_height > 0 ? output.desc.scale_height : input_height;
+    auto scale_width = input_width;
+    auto scale_height = input_height;
+
+    if (output.desc.scale_shorter_side > 0) {
+        scale_width = input_width * output.desc.scale_shorter_side / input_height;
+        scale_width = scale_width < output.desc.scale_shorter_side ?
+                      output.desc.scale_shorter_side : scale_width;
+        scale_height = input_height * output.desc.scale_shorter_side / input_width;
+        scale_height = scale_height < output.desc.scale_shorter_side ?
+                       output.desc.scale_shorter_side : scale_height;
+    } else {
+        scale_width = output.desc.scale_width > 0 ? output.desc.scale_width : input_width;
+        scale_height = output.desc.scale_height > 0 ? output.desc.scale_height : input_height;
+    }
 
     auto fx = static_cast<float>(input_width) / scale_width;
     auto fy = static_cast<float>(input_height) / scale_height;
+
+    auto crop_x = output.desc.crop_x;
+    auto crop_y = output.desc.crop_y;
+
+    if (output.desc.center_crop) {
+        crop_x = (scale_width - output.desc.width) / 2;
+        crop_y = (scale_height - output.desc.height) / 2;
+    }
 
     dim3 block(32, 8);
     dim3 grid(divUp(output.desc.width, block.x), divUp(output.desc.height, block.y));
 
     process_frame_kernel<<<grid, block, 0, stream>>>
-            (luma, chroma, output, index, fx, fy);
+            (luma, chroma, output, index, fx, fy, crop_x, crop_y);
 }
 
 template void process_frame<uint8_t>(

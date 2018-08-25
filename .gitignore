@@ -9,3 +9,5 @@ output
 build*
 .eggs/
 eggs/
+.idea/
+.vscode/

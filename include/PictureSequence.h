@@ -143,6 +143,21 @@ struct NVVL_LayerDesc {
     uint16_t scale_height;
 
     /**
+     * Shorter side size the original frame is scaled to before cropping.
+     * 
+     * If left <= 0, no shorter side scaling is performed. If > 0,
+     * other scaling (above) will be ignored.
+     */
+    uint16_t scale_shorter_side;
+
+    /**
+     * Indicates if center crop is used.
+     * 
+     * If Ture, crop_x and crop_y will be ignored.
+     */
+    bool center_crop;
+
+    /**
      * Indicates if the frame should be flipped horizontally before scaling.
      */
     bool horiz_flip;
