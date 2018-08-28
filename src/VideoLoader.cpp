@@ -254,14 +254,24 @@ VideoLoader::impl::OpenFile& VideoLoader::impl::get_or_open_file(std::string fil
             if (width_ != codecpar(stream)->width ||
                 height_ != codecpar(stream)->height ||
                 codec_id_ != codec_id) {
-                std::stringstream err;
-                err << "File " << filename << " is not the same size and codec as previous files."
-                    << " This is not yet supported. ("
-                    << codecpar(stream)->width << "x" << codecpar(stream)->height
-                    << " instead of "
-                    << width_ << "x" << height_ << " or codec "
-                    << codec_id << " != " << codec_id_ << ")";
-                throw std::runtime_error(err.str());
+                // std::stringstream err;
+                // err << "File " << filename << " is not the same size and codec as previous files."
+                //     << " This is not yet supported. ("
+                //     << codecpar(stream)->width << "x" << codecpar(stream)->height
+                //     << " instead of "
+                //     << width_ << "x" << height_ << " or codec "
+                //     << codec_id << " != " << codec_id_ << ")";
+                // throw std::runtime_error(err.str());
+                width_ = codecpar(stream)->width;
+                height_ = codecpar(stream)->height;
+                codec_id_ = codec_id;
+                send_queue_.clear();
+                // vid_decoder_->finish();
+                vid_decoder_ = nullptr;
+                vid_decoder_ = std::unique_ptr<detail::Decoder>{
+                    new detail::NvDecoder(device_id_, log_,
+                                          codecpar(stream),
+                                          stream->time_base)};
             }
         }
         file.stream_base_ = stream->time_base;
@@ -380,6 +390,8 @@ void VideoLoader::impl::read_file() {
         // another key frame to start decoding again
         seek(file, req.frame);
 
+        auto offset = 0;
+
         auto nonkey_frame_count = 0;
         while (req.count > 0 && av_read_frame(file.fmt_ctx_.get(), &raw_pkt) >= 0) {
             auto pkt = pkt_ptr(&raw_pkt, av_packet_unref);
@@ -393,7 +405,10 @@ void VideoLoader::impl::read_file() {
 
             auto frame = av_rescale_q(pkt->pts,
                                       file.stream_base_,
-                                      file.frame_base_);
+                                      file.frame_base_) - offset;
+
+            // std::cout << pkt->pts << " " << file.stream_base_.num << " " << file.stream_base_.den << " "
+            //           << file.frame_base_.num << " " << file.frame_base_.den << std::endl;
 
             file.last_frame_ = frame;
             auto key = pkt->flags & AV_PKT_FLAG_KEY;
@@ -404,24 +419,29 @@ void VideoLoader::impl::read_file() {
                 if (key) {
                     static auto final_try = false;
                     if (frame > req.frame + nonkey_frame_count) {
-                        log_.debug() << device_id_ << ": We got ahead of ourselves! "
-                                     << frame << " > " << req.frame << " + "
-                                     << nonkey_frame_count
-                                     << " seek_hack = " << seek_hack << std::endl;
-                        seek_hack *= 2;
-                        if (final_try) {
-                            std::stringstream ss;
-                            ss << device_id_ << ": I give up, I can't get it to seek to frame "
-                               << req.frame;
-                            throw std::runtime_error(ss.str());
-                        }
-                        if (req.frame > seek_hack) {
-                            seek(file, req.frame - seek_hack);
+                        if (req.frame == 0) {
+                            offset = frame;
+                            frame -= offset;
                         } else {
-                            final_try = true;
-                            seek(file, 0);
+                            log_.debug() << device_id_ << ": We got ahead of ourselves! "
+                                        << frame << " > " << req.frame << " + "
+                                        << nonkey_frame_count
+                                        << " seek_hack = " << seek_hack << std::endl;
+                            seek_hack *= 2;
+                            if (final_try) {
+                                std::stringstream ss;
+                                ss << device_id_ << ": I give up, I can't get it to seek to frame "
+                                << req.frame;
+                                throw std::runtime_error(ss.str());
+                            }
+                            if (req.frame > seek_hack) {
+                                seek(file, req.frame - seek_hack);
+                            } else {
+                                final_try = true;
+                                seek(file, 0);
+                            }
+                            continue;
                         }
-                        continue;
                     } else {
                         req.frame += nonkey_frame_count + 1;
                         req.count -= nonkey_frame_count + 1;

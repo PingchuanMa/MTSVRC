@@ -344,13 +344,13 @@ int NvDecoder::handle_display_(CUVIDPARSERDISPINFO* disp_info) {
         return 1;
     }
 
-    if (frame != current_recv_.frame) {
-        // TODO This definitely needs better error handling... what if
-        // we never get the frame we are waiting for?!
-        log_.info() << "Ditching frame " << frame << " since we are waiting for "
-                    << "frame " << current_recv_.frame << std::endl;
-        return 1;
-    }
+    // if (frame != current_recv_.frame) {
+    //     // TODO This definitely needs better error handling... what if
+    //     // we never get the frame we are waiting for?!
+    //     log_.info() << "Ditching frame " << frame << " since we are waiting for "
+    //                 << "frame " << current_recv_.frame << std::endl;
+    //     return 1;
+    // }
 
     log_.info() << "\e[1mGoing ahead with frame " << frame
                 << " wanted count: " << current_recv_.count

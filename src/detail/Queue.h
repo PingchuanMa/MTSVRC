@@ -56,6 +56,11 @@ class Queue {
         cond_.notify_all();
     }
 
+    void clear() {
+        std::queue<T> empty;
+        std::swap(queue_, empty);
+    }
+
   private:
     std::queue<T> queue_;
     std::mutex lock_;

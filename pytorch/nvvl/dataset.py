@@ -427,65 +427,55 @@ class SingleVideoLoader(object):
             self.processing = ProcessDesc()
 
         try:
-            log_level = log_levels[log_level]
+            self.log_level = log_levels[log_level]
         except KeyError:
             print("Invalid log level", log_level, "using warn.", file=sys.stderr)
-            log_level = lib.LogLevel_Warn
+            self.log_level = lib.LogLevel_Warn
 
         if sequence_length < 1:
             raise ValueError("Sequence length must be at least 1")
 
-        self.loader = lib.nvvl_create_video_loader_with_log(self.device_id, log_level)
-
-    def get_stats(self):
-        return lib.nvvl_get_stats(self.loader)
-
-    def reset_stats(self):
-        return lib.nvvl_reset_stats(self.loader)
-
-    def set_log_level(self, level):
-        """Sets the log level from now forward
-
-        Parameters
-        ----------
-        level : string
-            The log level, one of "debug", "info", "warn", "error", or "none"
-        """
-        lib.nvvl_set_log_level(self.loader, log_levels[level])
-
-    def video_frames(self, file_dir, use_batch=False):
-        size = lib.nvvl_video_size(self.loader)
-        self.width = size.width
-        self.height = size.height
-
-        if self.processing.width == 0:
-            self.processing.width = self.width
-
-        if self.processing.height == 0:
-            self.processing.height = self.height
-
         if self.processing.count == 0:
             self.processing.count = self.sequence_length
 
-        lib.nvvl_read_sequence(self.loader, str.encode(file_dir),
+    # def get_stats(self):
+    #     return lib.nvvl_get_stats(self.loader)
+
+    # def reset_stats(self):
+    #     return lib.nvvl_reset_stats(self.loader)
+
+    # def set_log_level(self, level):
+    #     """Sets the log level from now forward
+
+    #     Parameters
+    #     ----------
+    #     level : string
+    #         The log level, one of "debug", "info", "warn", "error", or "none"
+    #     """
+    #     lib.nvvl_set_log_level(self.loader, log_levels[level])
+
+    def video_frames(self, file_dir, use_batch=False):
+        loader = lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level)
+        lib.nvvl_read_sequence(loader, str.encode(file_dir),
                                self.start_frame, self.sequence_length)
         tensor = self._create_tensor(use_batch)
-        seq = self._start_receive(tensor, use_batch)
+        seq = self._start_receive(loader, tensor, use_batch)
         self._finish_receive(seq)
+        lib.nvvl_destroy_video_loader(loader)
         return tensor
 
     def _get_layer_desc(self, desc):
         d = desc.desc()
 
-        if (desc.random_crop and (self.width > desc.width)):
-            d.crop_x = random.randint(0, self.width - desc.width)
-        else:
-            d.crop_x = 0
+        # if (desc.random_crop and (self.width > desc.width)):
+        #     d.crop_x = random.randint(0, self.width - desc.width)
+        # else:
+        #     d.crop_x = 0
 
-        if (desc.random_crop and (self.height > desc.height)):
-            d.crop_y = random.randint(0, self.height - desc.height)
-        else:
-            d.crop_y = 0
+        # if (desc.random_crop and (self.height > desc.height)):
+        #     d.crop_y = random.randint(0, self.height - desc.height)
+        # else:
+        #     d.crop_y = 0
 
         if (desc.random_flip):
             d.horiz_flip = random.random() < 0.5
@@ -494,7 +484,7 @@ class SingleVideoLoader(object):
 
         return d
 
-    def _start_receive(self, tensor, use_batch=False):
+    def _start_receive(self, loader, tensor, use_batch=False):
         seq = lib.nvvl_create_sequence_device(self.sequence_length, self.device_id)
 
         if use_batch:
@@ -524,7 +514,7 @@ class SingleVideoLoader(object):
         layer.data = self.ffi.cast("void*", tensor.data_ptr())
         lib.nvvl_set_layer(seq, layer, self.name)
 
-        lib.nvvl_receive_frames(self.loader, seq)
+        lib.nvvl_receive_frames(loader, seq)
         return seq
 
     def _finish_receive(self, seq, synchronous=False):
@@ -539,6 +529,3 @@ class SingleVideoLoader(object):
             tensor = self.processing.tensor_type(
                 *self.processing.get_dims(1 if use_batch else 0))
         return tensor
-
-    def __dealloc__(self):
-        lib.nvvl_destroy_video_loader(self.loader)
