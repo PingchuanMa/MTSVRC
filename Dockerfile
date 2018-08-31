@@ -91,5 +91,11 @@ RUN cd /software && \
 
 RUN rm -rf /var/lib/apt/lists/*
 
-RUN python -m pip install http://download.pytorch.org/whl/cu90/torch-0.3.1-cp35-cp35m-linux_x86_64.whl && \
-    python -m pip install torchvision
+COPY ./torch-0.3.1-cp35-cp35m-linux_x86_64.whl /software/
+
+RUN python -m pip install /software/torch-0.3.1-cp35-cp35m-linux_x86_64.whl && rm -rf /software
+
+RUN python -m pip install cffi torchvision
+
+RUN mkdir -p /workspace && cd /workspace && \
+    git clone https://github.com/Pika7ma/nvvl.git

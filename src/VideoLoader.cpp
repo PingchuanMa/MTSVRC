@@ -391,7 +391,6 @@ void VideoLoader::impl::read_file() {
     // av_packet_unref is unlike the other libav free functions
     using pkt_ptr = std::unique_ptr<AVPacket, decltype(&av_packet_unref)>;
     auto raw_pkt = AVPacket{};
-    auto seek_hack = 1;
     while (!done_) {
         if (done_) {
             break;
