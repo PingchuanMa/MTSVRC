@@ -26,6 +26,9 @@ struct FrameReq {
     std::string filename;
     int frame;
     int count;
+    int interval;
+    int key_base;
+    int prev_frame;
 };
 
 class CUStream {

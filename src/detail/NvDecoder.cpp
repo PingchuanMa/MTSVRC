@@ -333,6 +333,7 @@ int NvDecoder::handle_display_(CUVIDPARSERDISPINFO* disp_info) {
         // std::cout << "Moving on to next request, " << recv_queue_.size()
         //           << " reqs left" << std::endl;
         current_recv_ = recv_queue_.pop();
+        current_recv_.frame = 0;
     }
 
     if (done_) return 0;
@@ -352,13 +353,31 @@ int NvDecoder::handle_display_(CUVIDPARSERDISPINFO* disp_info) {
     //     return 1;
     // }
 
+    if (current_recv_.prev_frame > frame && current_recv_.key_base > 0) {
+        current_recv_.key_base = 0;
+    }
+
+    if (current_recv_.key_base <= 0) {
+        if (current_recv_.frame <= 0) {
+            current_recv_.frame = current_recv_.interval - 1;
+            current_recv_.count--;
+        } else {
+            current_recv_.frame--;
+            return 1;
+        }
+    } else {
+        current_recv_.count--;
+    }
+
+    current_recv_.prev_frame = frame;
+
     log_.info() << "\e[1mGoing ahead with frame " << frame
                 << " wanted count: " << current_recv_.count
                 << " disp_info->picture_index: " << disp_info->picture_index
                 << "\e[0m" << std::endl;
 
-    current_recv_.frame++;
-    current_recv_.count--;
+    // current_recv_.frame += current_recv_.interval;
+    // current_recv_.count--;
 
     frame_in_use_[disp_info->picture_index] = true;
     frame_queue_.push(disp_info);

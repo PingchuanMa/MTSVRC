@@ -82,7 +82,7 @@ class VideoLoader::impl {
     impl(int device_id, LogLevel log_level);
     int frame_count(std::string filename);
     Size size() const;
-    void read_sequence(std::string filename, int frame, int count=1);
+    void read_sequence(std::string filename, int frame, int count=1, int interval=1, int key_base=0);
     void receive_frames(PictureSequence& sequence);
     VideoLoaderStats get_stats() const;
     void reset_stats();
@@ -135,6 +135,7 @@ class VideoLoader::impl {
 
     void read_file();
     void seek(OpenFile& file, int frame);
+    void seek_forward(OpenFile& file, int frame, int first_frame=0);
 };
 
 VideoLoader::VideoLoader(int device_id)
@@ -180,12 +181,12 @@ int VideoLoader::impl::frame_count(std::string filename) {
 }
 
 
-void VideoLoader::read_sequence(std::string filename, int frame, int count) {
-    pImpl->read_sequence(filename, frame, count);
+void VideoLoader::read_sequence(std::string filename, int frame, int count, int interval, int key_base) {
+    pImpl->read_sequence(filename, frame, count, interval, key_base);
 }
 
-void VideoLoader::impl::read_sequence(std::string filename, int frame, int count) {
-    auto req = detail::FrameReq{filename, frame, count};
+void VideoLoader::impl::read_sequence(std::string filename, int frame, int count, int interval, int key_base) {
+    auto req = detail::FrameReq{filename, frame, count, interval, key_base, -1};
     // give both reader thread and decoder a copy of what is coming
     send_queue_.push(req);
 }
@@ -254,24 +255,22 @@ VideoLoader::impl::OpenFile& VideoLoader::impl::get_or_open_file(std::string fil
             if (width_ != codecpar(stream)->width ||
                 height_ != codecpar(stream)->height ||
                 codec_id_ != codec_id) {
-                // std::stringstream err;
-                // err << "File " << filename << " is not the same size and codec as previous files."
-                //     << " This is not yet supported. ("
-                //     << codecpar(stream)->width << "x" << codecpar(stream)->height
-                //     << " instead of "
-                //     << width_ << "x" << height_ << " or codec "
-                //     << codec_id << " != " << codec_id_ << ")";
-                // throw std::runtime_error(err.str());
-                width_ = codecpar(stream)->width;
-                height_ = codecpar(stream)->height;
-                codec_id_ = codec_id;
-                send_queue_.clear();
+                std::stringstream err;
+                err << "File " << filename << " is not the same size and codec as previous files."
+                    << " This is not yet supported. ("
+                    << codecpar(stream)->width << "x" << codecpar(stream)->height
+                    << " instead of "
+                    << width_ << "x" << height_ << " or codec "
+                    << codec_id << " != " << codec_id_ << ")";
+                throw std::runtime_error(err.str());
+                // width_ = codecpar(stream)->width;
+                // height_ = codecpar(stream)->height;
+                // codec_id_ = codec_id;
                 // vid_decoder_->finish();
-                vid_decoder_ = nullptr;
-                vid_decoder_ = std::unique_ptr<detail::Decoder>{
-                    new detail::NvDecoder(device_id_, log_,
-                                          codecpar(stream),
-                                          stream->time_base)};
+                // vid_decoder_.reset(
+                //     new detail::NvDecoder(device_id_, log_,
+                //                         codecpar(stream),
+                //                         stream->time_base));
             }
         }
         file.stream_base_ = stream->time_base;
@@ -356,6 +355,38 @@ void VideoLoader::impl::seek(OpenFile& file, int frame) {
     // starting.
 }
 
+void VideoLoader::impl::seek_forward(OpenFile& file, int frame, int first_frame) {
+    auto seek_time = av_rescale_q(frame,
+                                  file.frame_base_,
+                                  file.stream_base_);
+    log_.debug() << "Seeking to frame " << frame << " timestamp " << seek_time << std::endl;
+    // auto ret = avformat_seek_file(file.fmt_ctx_.get(), file.vid_stream_idx_,
+    //                               INT64_MIN, seek_time, seek_time, 0);
+
+    // auto ret = av_seek_frame(file.fmt_ctx_.get(), file.vid_stream_idx_,
+    //                          frame, AVSEEK_FLAG_FRAME | AVSEEK_FLAG_BACKWARD);
+    auto ret = av_seek_frame(file.fmt_ctx_.get(), file.vid_stream_idx_,
+                             seek_time, AVSEEK_FLAG_FRAME);
+
+    if (ret < 0) {
+        seek_time = av_rescale_q(first_frame,
+                                 file.frame_base_,
+                                 file.stream_base_);
+        ret = av_seek_frame(file.fmt_ctx_.get(), file.vid_stream_idx_,
+                            seek_time, AVSEEK_FLAG_BACKWARD);
+    }
+
+    if (ret < 0) {
+        std::cerr << "Unable to skip to ts " << seek_time
+                  << ": " << av_err2str(ret) << std::endl;
+    }
+
+    // todo this seek may be unreliable and will sometimes start after
+    // the promised time step.  So we need to calculate the end_time
+    // after we actually get a frame to see where we are really
+    // starting.
+}
+
 void VideoLoader::impl::read_file() {
     // av_packet_unref is unlike the other libav free functions
     using pkt_ptr = std::unique_ptr<AVPacket, decltype(&av_packet_unref)>;
@@ -378,6 +409,13 @@ void VideoLoader::impl::read_file() {
 
         auto& file = get_or_open_file(req.filename);
 
+        if (file.frame_count_ < req.count * req.interval + 20) {
+            req.interval = (int)((file.frame_count_ - 20) / req.count);
+            if (req.interval <= 0) {
+                req.interval = 1;
+            }
+        }
+
         // give the vid_decoder a copy of the req before we trash it
         if (vid_decoder_) {
             vid_decoder_->push_req(std::move(req));
@@ -390,10 +428,26 @@ void VideoLoader::impl::read_file() {
         // another key frame to start decoding again
         seek(file, req.frame);
 
-        auto offset = 0;
-
-        auto nonkey_frame_count = 0;
-        while (req.count > 0 && av_read_frame(file.fmt_ctx_.get(), &raw_pkt) >= 0) {
+        auto key_head = 0;
+        auto key_base = req.key_base;
+        auto frame_num = 0;
+        auto key_base_frame_num = 0;
+        auto count = req.count;
+        auto first_frame = req.frame;
+        while (req.count > 0) {
+            auto ret = av_read_frame(file.fmt_ctx_.get(), &raw_pkt);
+            if (ret < 0) {
+                seek(file, first_frame);
+                key_head = 0;
+                req.key_base = 0;
+                if (file.frame_count_ < (count - key_base_frame_num) * req.interval + 20) {
+                    req.interval = (int)((file.frame_count_ - 20) / (count - key_base_frame_num));
+                    if (req.interval <= 0) {
+                        req.interval = 1;
+                    }
+                }
+                continue;
+            }
             auto pkt = pkt_ptr(&raw_pkt, av_packet_unref);
 
             stats_.bytes_read += pkt->size;
@@ -405,7 +459,7 @@ void VideoLoader::impl::read_file() {
 
             auto frame = av_rescale_q(pkt->pts,
                                       file.stream_base_,
-                                      file.frame_base_) - offset;
+                                      file.frame_base_);
 
             // std::cout << pkt->pts << " " << file.stream_base_.num << " " << file.stream_base_.den << " "
             //           << file.frame_base_.num << " " << file.frame_base_.den << std::endl;
@@ -415,58 +469,39 @@ void VideoLoader::impl::read_file() {
 
             // The following assumes that all frames between key frames
             // have pts between the key frames.  Is that true?
-            if (frame >= req.frame) {
+            if (req.key_base > 0) {
                 if (key) {
-                    static auto final_try = false;
-                    if (frame > req.frame + nonkey_frame_count) {
-                        if (req.frame == 0) {
-                            offset = frame;
-                            frame -= offset;
-                        } else {
-                            log_.debug() << device_id_ << ": We got ahead of ourselves! "
-                                        << frame << " > " << req.frame << " + "
-                                        << nonkey_frame_count
-                                        << " seek_hack = " << seek_hack << std::endl;
-                            seek_hack *= 2;
-                            if (final_try) {
-                                std::stringstream ss;
-                                ss << device_id_ << ": I give up, I can't get it to seek to frame "
-                                << req.frame;
-                                throw std::runtime_error(ss.str());
-                            }
-                            if (req.frame > seek_hack) {
-                                seek(file, req.frame - seek_hack);
-                            } else {
-                                final_try = true;
-                                seek(file, 0);
-                            }
-                            continue;
-                        }
-                    } else {
-                        req.frame += nonkey_frame_count + 1;
-                        req.count -= nonkey_frame_count + 1;
-                        nonkey_frame_count = 0;
-                    }
-                    final_try = false;
+                    key_head = frame;
+                    key_base = req.key_base;
+                } else if (key_base <= 0) {
+                    continue;
+                }
+                key_base--;
+                req.frame++;
+                req.count--;
+                key_base_frame_num++;
+            } else if (frame >= key_head && req.key_base <= 0) {
+                if (key) {
+                    key_head = frame;
+                    req.frame = key_base_frame_num + frame_num / req.interval + 1;
+                    req.count = count - req.frame;
                 } else {
-                    nonkey_frame_count++;
                     // A hueristic so we don't go way over... what should "20" be?
-                    if (frame > req.frame + req.count + 20) {
+                    if (frame_num > (count - key_base_frame_num) * req.interval + 10) {
                         // This should end the loop
-                        req.frame += nonkey_frame_count;
-                        req.count -= nonkey_frame_count;
-                        nonkey_frame_count = 0;
+                        req.frame = count;
+                        req.count = 0;
                     }
                 }
+                frame_num++;
             }
-            seek_hack = 1;
 
             log_.info() << device_id_ << ": Sending " << (key ? "  key " : "nonkey")
                         << " frame " << frame << " to the decoder."
                         << " size = " << pkt->size
                         << " req.frame = " << req.frame
                         << " req.count = " << req.count
-                        << " nonkey_frame_count = " << nonkey_frame_count
+                        << " #frame = " << frame_num
                         << std::endl;
 
             stats_.bytes_decoded += pkt->size;
@@ -658,9 +693,9 @@ int nvvl_frame_count(VideoLoaderHandle loader, const char* filename) {
 }
 
 void nvvl_read_sequence(VideoLoaderHandle loader, const char* filename,
-                   int frame, int count) {
+                        int frame, int count, int interval, int key_base) {
     auto vl = reinterpret_cast<NVVL::VideoLoader*>(loader);
-    vl->read_sequence(filename, frame, count);
+    vl->read_sequence(filename, frame, count, interval, key_base);
 }
 
 PictureSequenceHandle nvvl_receive_frames(VideoLoaderHandle loader, PictureSequenceHandle sequence) {
