@@ -417,13 +417,15 @@ class SingleVideoLoader(object):
     """
     def __init__(self, sequence_length, start_frame=0, device_id=0,
                  processing=None, log_level="warn", max_loader=20,
-                 clear_freq=500):
+                 clear_freq=500, use_pool=True):
         self.ffi = lib._ffi
         self.sequence_length = sequence_length
         self.device_id = device_id
         self.start_frame = start_frame
-        self.max_loader = max_loader
-        self.clear_freq = clear_freq
+        self.use_pool = use_pool
+        if use_pool:
+            self.max_loader = max_loader
+            self.clear_freq = clear_freq
         self.name = str.encode('pixels')
 
         self.processing = processing
@@ -442,12 +444,13 @@ class SingleVideoLoader(object):
         if self.processing.count == 0:
             self.processing.count = self.sequence_length
 
-        self.run_count = 0
-        self.loader_index_dict = dict()
-        self.loader_names = ['' for _ in range(max_loader)]
-        self.init_loader = 0
-        self.loader_list = [lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level) for _ in range(max_loader)]
-        self.hit_number = np.zeros((max_loader,))
+        if use_pool:
+            self.run_count = 0
+            self.loader_index_dict = dict()
+            self.loader_names = ['' for _ in range(max_loader)]
+            self.init_loader = 0
+            self.loader_list = [lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level) for _ in range(max_loader)]
+            self.hit_number = np.zeros((max_loader,))
 
         # self.loader = lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level)
 
@@ -468,38 +471,42 @@ class SingleVideoLoader(object):
     #     lib.nvvl_set_log_level(self.loader, log_levels[level])
 
     def video_frames(self, file_dir, interval=1, key_base=0, use_batch=False):
-        size = lib.nvvl_video_size_from_file(str.encode(file_dir))
-        size_str_repr = '{size.width}:{size.height}'.format(size=size)
-        if size_str_repr not in self.loader_index_dict:
-            if self.init_loader < self.max_loader:
-                self.loader_index_dict[size_str_repr] = self.init_loader
-                self.loader_names[self.init_loader] = size_str_repr
-                self.init_loader += 1
+        if self.use_pool:
+            size = lib.nvvl_video_size_from_file(str.encode(file_dir))
+            size_str_repr = '{size.width}:{size.height}'.format(size=size)
+            if size_str_repr not in self.loader_index_dict:
+                if self.init_loader < self.max_loader:
+                    self.loader_index_dict[size_str_repr] = self.init_loader
+                    self.loader_names[self.init_loader] = size_str_repr
+                    self.init_loader += 1
+                else:
+                    drop_index = np.argmin(self.hit_number)
+                    lib.nvvl_destroy_video_loader(self.loader_list[drop_index])
+                    del self.loader_index_dict[self.loader_names[drop_index]]
+                    self.loader_names[drop_index] = size_str_repr
+                    self.loader_index_dict[size_str_repr] = drop_index
+                    self.loader_list[drop_index] = lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level)
+                    self.hit_number[drop_index] = 0
             else:
-                drop_index = np.argmin(self.hit_number)
-                lib.nvvl_destroy_video_loader(self.loader_list[drop_index])
-                del self.loader_index_dict[self.loader_names[drop_index]]
-                self.loader_names[drop_index] = size_str_repr
-                self.loader_index_dict[size_str_repr] = drop_index
-                self.loader_list[drop_index] = lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level)
-                self.hit_number[drop_index] = 0
+                self.hit_number[self.loader_index_dict[size_str_repr]] += 5
+            if self.init_loader >= self.max_loader:
+                self.hit_number[:self.init_loader] -= 1
+            loader = self.loader_list[self.loader_index_dict[size_str_repr]]
         else:
-            self.hit_number[self.loader_index_dict[size_str_repr]] += 5
-        if self.init_loader >= self.max_loader:
-            self.hit_number[:self.init_loader] -= 1
-        loader = self.loader_list[self.loader_index_dict[size_str_repr]]
-        # loader = lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level)
+            loader = lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level)
         lib.nvvl_read_sequence(loader, str.encode(file_dir),
                                self.start_frame, self.sequence_length,
                                interval, key_base)
         tensor = self._create_tensor(use_batch)
         seq = self._start_receive(loader, tensor, use_batch)
         self._finish_receive(seq)
-        self.run_count += 1
-        if self.run_count == self.clear_freq:
-            self.run_count = 0
-            self.hit_number /= self.clear_freq
-        # lib.nvvl_destroy_video_loader(loader)
+        if self.use_pool:
+            self.run_count += 1
+            if self.run_count == self.clear_freq:
+                self.run_count = 0
+                self.hit_number /= self.clear_freq
+        else:
+            lib.nvvl_destroy_video_loader(loader)
         return tensor
 
     def _get_layer_desc(self, desc):

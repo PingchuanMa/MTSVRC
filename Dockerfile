@@ -1,7 +1,7 @@
 ARG CUDA_VERSION=9.0
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu16.04
 
-ARG FFMPEG_VERSION=3.4.2
+ARG FFMPEG_VERSION=4.0
 ARG CMAKE_VERSION=3.10.2
 
 # nvcuvid deps
@@ -75,19 +75,19 @@ RUN ln -s /usr/local/nvidia/lib64/libnvcuvid.so.1 /usr/local/lib/libnvcuvid.so &
     ln -s libnvcuvid.so.1 /usr/lib/x86_64-linux-gnu/libnvcuvid.so
 
 # install opencv
-RUN mkdir -p /software && cd /software && \
-    git clone https://github.com/opencv/opencv.git && \
-    git clone https://github.com/opencv/opencv_contrib.git
+# RUN mkdir -p /software && cd /software && \
+#     git clone https://github.com/opencv/opencv.git && \
+#     git clone https://github.com/opencv/opencv_contrib.git
 
-RUN cd /software && \
-    mkdir -p /software/opencv/build && cd /software/opencv/build && \
-    cmake -DCMAKE_BUILD_TYPE=RELEASE -DCMAKE_INSTALL_PREFIX=/usr/local \
-    -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
-    -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_TBB=ON -DWITH_DNN=OFF \
-    -DBUILD_opencv_python2=ON -DBUILD_opencv_python3=ON .. && \
-    make -j4 && \
-    make install && \
-    ldconfig && rm -rf /software
+# RUN cd /software && \
+#     mkdir -p /software/opencv/build && cd /software/opencv/build && \
+#     cmake -DCMAKE_BUILD_TYPE=RELEASE -DCMAKE_INSTALL_PREFIX=/usr/local \
+#     -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
+#     -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_TBB=ON -DWITH_DNN=OFF \
+#     -DBUILD_opencv_python2=ON -DBUILD_opencv_python3=ON .. && \
+#     make -j4 && \
+#     make install && \
+#     ldconfig && rm -rf /software
 
 RUN rm -rf /var/lib/apt/lists/*
 
@@ -97,5 +97,4 @@ RUN python -m pip install /software/torch-0.3.1-cp35-cp35m-linux_x86_64.whl && r
 
 RUN python -m pip install cffi torchvision
 
-RUN mkdir -p /workspace && cd /workspace && \
-    git clone https://github.com/Pika7ma/nvvl.git
+RUN mkdir /workspace && cd /workspace && git clone https://github.com/Pika7ma/nvvl.git
