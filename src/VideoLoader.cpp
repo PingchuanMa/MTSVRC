@@ -408,12 +408,12 @@ void VideoLoader::impl::read_file() {
 
         auto& file = get_or_open_file(req.filename);
 
-        if (file.frame_count_ < req.count * req.interval + 20) {
-            req.interval = (int)((file.frame_count_ - 20) / req.count);
-            if (req.interval <= 0) {
-                req.interval = 1;
-            }
-        }
+        // if (file.frame_count_ < req.count * req.interval + 20) {
+        //     req.interval = (int)((file.frame_count_ - 20) / req.count);
+        //     if (req.interval <= 0) {
+        //         req.interval = 1;
+        //     }
+        // }
 
         // give the vid_decoder a copy of the req before we trash it
         if (vid_decoder_) {
@@ -436,15 +436,18 @@ void VideoLoader::impl::read_file() {
         while (req.count > 0) {
             auto ret = av_read_frame(file.fmt_ctx_.get(), &raw_pkt);
             if (ret < 0) {
+                log_.info() << "An EOF reached after " << key_base_frame_num <<
+                               "+" << frame_num << " frames read" <<
+                               "-----------------------------" << std::endl;
                 seek(file, first_frame);
                 key_head = 0;
                 req.key_base = 0;
-                if (file.frame_count_ < (count - key_base_frame_num) * req.interval + 20) {
-                    req.interval = (int)((file.frame_count_ - 20) / (count - key_base_frame_num));
-                    if (req.interval <= 0) {
-                        req.interval = 1;
-                    }
-                }
+                // if (file.frame_count_ < (count - key_base_frame_num) * req.interval + 20) {
+                //     req.interval = (int)((file.frame_count_ - 20) / (count - key_base_frame_num));
+                //     if (req.interval <= 0) {
+                //         req.interval = 1;
+                //     }
+                // }
                 continue;
             }
             auto pkt = pkt_ptr(&raw_pkt, av_packet_unref);
@@ -482,7 +485,7 @@ void VideoLoader::impl::read_file() {
             } else if (frame >= key_head && req.key_base <= 0) {
                 if (key) {
                     key_head = frame;
-                    req.frame = key_base_frame_num + frame_num / req.interval + 1;
+                    req.frame = key_base_frame_num + std::max((frame_num - 10), 0) / req.interval + 1;
                     req.count = count - req.frame;
                 } else {
                     // A hueristic so we don't go way over... what should "20" be?
@@ -520,7 +523,19 @@ void VideoLoader::impl::read_file() {
                     vid_decoder_->decode_packet(fpkt.get());
                 }
                 if (ret != AVERROR(EAGAIN)) {
-                    seek_forward(file, frame, first_frame);
+                    seek(file, first_frame);
+                    log_.info() << "Unexpected return value: " << av_err2str(ret) <<
+                                   " Now in frame: " << frame <<
+                                   "++++++++++++++++++++++++++++++" << std::endl;
+
+                    key_head = 0;
+                    req.key_base = 0;
+                    // if (frame < (count - key_base_frame_num) * req.interval + 20) {
+                    //     req.interval = (int)((frame - 20) / (count - key_base_frame_num));
+                    //     if (req.interval <= 0) {
+                    //         req.interval = 1;
+                    //     }
+                    // }
                     continue;
                 }
 #else

@@ -78,13 +78,74 @@ template<typename T>
 __global__ void process_frame_kernel(
     cudaTextureObject_t luma, cudaTextureObject_t chroma,
     PictureSequence::Layer<T> dst, int index,
-    float fx, float fy, uint16_t crop_x, uint16_t crop_y) {
+    float fx, float fy, uint16_t scale_width, uint16_t scale_height) {
 
     const int dst_x = blockIdx.x * blockDim.x + threadIdx.x;
     const int dst_y = blockIdx.y * blockDim.y + threadIdx.y;
+    const int test_crop = blockIdx.z * blockDim.z + threadIdx.z;
 
-    if (dst_x >= dst.desc.width || dst_y >= dst.desc.height)
+    if (dst_x >= dst.desc.width  ||
+        dst_y >= dst.desc.height ||
+        test_crop >= dst.desc.test_crops)
         return;
+
+    auto crop_x = dst.desc.crop_x;
+    auto crop_y = dst.desc.crop_y;
+
+    if (dst.desc.test_crops == 5) {
+        switch (test_crop) {
+        case 0:
+            crop_x = 0;
+            crop_y = 0;
+            break;
+        case 1:
+            crop_x = 0;
+            crop_y = scale_height - dst.desc.height;
+            break;
+        case 2:
+            crop_x = scale_width - dst.desc.width;
+            crop_y = 0;
+            break;
+        case 3:
+            crop_x = scale_width - dst.desc.width;
+            crop_y = scale_height - dst.desc.height;
+            break;
+        case 4:
+            crop_x = (scale_width - dst.desc.width) / 2;
+            crop_y = (scale_height - dst.desc.height) / 2;
+            break;
+        }
+    } else if (dst.desc.test_crops == 3) {
+        switch (test_crop) {
+        case 0: // left or bottom
+            if (scale_height <= scale_width) {
+                crop_x = 0;
+                crop_y = (scale_height - dst.desc.height) / 2;
+            } else {
+                crop_x = (scale_width - dst.desc.width) / 2;
+                crop_y = 0;
+            }
+            break;
+        case 1: // right or top
+            if (scale_height <= scale_width) {
+                crop_x = scale_width - dst.desc.width;
+                crop_y = (scale_height - dst.desc.height) / 2;
+            } else {
+                crop_x = (scale_width - dst.desc.width) / 2;
+                crop_y = scale_height - dst.desc.height;
+            }
+            break;
+        case 2:
+            crop_x = (scale_width - dst.desc.width) / 2;
+            crop_y = (scale_height - dst.desc.height) / 2;
+            break;
+        }
+    } else if (dst.desc.test_crops == 1) {
+        if (dst.desc.center_crop) {
+            crop_x = (scale_width - dst.desc.width) / 2;
+            crop_y = (scale_height - dst.desc.height) / 2;
+        }
+    }
 
     auto src_x = 0.0f;
     if (dst.desc.horiz_flip) {
@@ -93,7 +154,7 @@ __global__ void process_frame_kernel(
         src_x = (crop_x + dst_x) * fx;
     }
 
-    auto src_y = static_cast<float>(dst_y + dst.desc.crop_y) * fy;
+    auto src_y = static_cast<float>(dst_y + crop_y) * fy;
 
     yuv<float> yuv;
     yuv.y = tex2D<float>(luma, src_x + 0.5, src_y + 0.5);
@@ -103,7 +164,8 @@ __global__ void process_frame_kernel(
 
     auto out = &dst.data[dst_x * dst.desc.stride.x +
                          dst_y * dst.desc.stride.y +
-                         index * dst.desc.stride.n];
+                         index * dst.desc.stride.n +
+                         test_crop * dst.desc.stride.n * dst.desc.count];
 
     switch(dst.desc.color_space) {
         case ColorSpace_RGB:
@@ -154,19 +216,12 @@ void process_frame(
     auto fx = static_cast<float>(input_width) / scale_width;
     auto fy = static_cast<float>(input_height) / scale_height;
 
-    auto crop_x = output.desc.crop_x;
-    auto crop_y = output.desc.crop_y;
-
-    if (output.desc.center_crop) {
-        crop_x = (scale_width - output.desc.width) / 2;
-        crop_y = (scale_height - output.desc.height) / 2;
-    }
-
-    dim3 block(32, 8);
+    // dim3 block(32, 8);
+    dim3 block(16, 8, output.desc.test_crops);
     dim3 grid(divUp(output.desc.width, block.x), divUp(output.desc.height, block.y));
 
     process_frame_kernel<<<grid, block, 0, stream>>>
-            (luma, chroma, output, index, fx, fy, crop_x, crop_y);
+            (luma, chroma, output, index, fx, fy, scale_width, scale_height);
 }
 
 template void process_frame<uint8_t>(

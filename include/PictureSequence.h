@@ -214,6 +214,16 @@ struct NVVL_LayerDesc {
     struct RGB_Pixel mean;
     struct RGB_Pixel std;
 
+    /**
+     * Crop number for test.
+     * 
+     * Only 1 and 5 are supported, when 1 is set, the crop
+     * type depends on `crop_x(y)` and `center_crop`, when
+     * 5 is set, left top, left bottom, right top, right
+     * bottom, center crop are executed.
+     */
+    uint16_t test_crops;
+
 };
 
 /**

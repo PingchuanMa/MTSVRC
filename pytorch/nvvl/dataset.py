@@ -73,7 +73,7 @@ class ProcessDesc(object):
                  normalized=False, random_crop=False, random_flip=False,
                  color_space="RGB", index_map=None, dimension_order="fchw",
                  center_crop=False, mean=(0., 0., 0.), std=(1., 1., 1.),
-                 scale_shorter_side=0):
+                 scale_shorter_side=0, test_crops=1):
         self.ffi = lib._ffi
         self._desc = self.ffi.new("struct NVVL_LayerDesc*")
 
@@ -84,6 +84,11 @@ class ProcessDesc(object):
         self.scale_height = scale_height
         self.scale_shorter_side = scale_shorter_side
         self.normalized = normalized
+
+        if test_crops not in [1, 3, 5]:
+            raise NotImplementedError("Only 1, 3 and 5 crops are supported "
+                                      "while we got {}".format(test_crops))
+        self.test_crops = test_crops
 
         # if center crop is set, ignore other crop
         self.center_crop = center_crop
@@ -126,7 +131,7 @@ class ProcessDesc(object):
         if dim == 'c':
             return self.channels
         elif dim == 'f':
-            return self.count
+            return self.count * self.test_crops
         elif dim == 'h':
             return self.height
         elif dim == 'w':
