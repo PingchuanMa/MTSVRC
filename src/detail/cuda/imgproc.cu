@@ -149,7 +149,7 @@ __global__ void process_frame_kernel(
 
     auto src_x = 0.0f;
     if (dst.desc.horiz_flip) {
-        src_x = (dst.desc.width - crop_x - dst_x) * fx;
+        src_x = (scale_width - crop_x - dst_x) * fx;
     } else {
         src_x = (crop_x + dst_x) * fx;
     }
