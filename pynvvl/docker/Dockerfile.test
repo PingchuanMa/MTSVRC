@@ -1,0 +1,66 @@
+ARG cuda_version
+FROM nvidia/cuda:${cuda_version}-devel-ubuntu16.04
+
+ENV NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+
+RUN apt-get update && apt-get install -y \
+    python \
+    python-dev \
+    python-pip \
+    python-wheel \
+    python-setuptools \
+    gawk \
+    make \
+    build-essential \
+    libssl-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    wget \
+    curl \
+    llvm \
+    libncurses5-dev \
+    libncursesw5-dev \
+    xz-utils \
+    tk-dev \
+    git \
+    ffmpeg
+
+WORKDIR /root
+
+ENV HOME /root
+
+# Install pyenv.
+RUN git clone https://github.com/pyenv/pyenv.git ${HOME}/.pyenv
+ENV PYENV_ROOT ${HOME}/.pyenv
+ENV PATH ${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PYENV_ROOT}/libexec:${PATH}
+RUN eval "$(pyenv init -)"
+RUN pyenv versions
+
+# Install Python.
+ARG python_versions
+# RUN pyenv install 3.5.1
+RUN for VERSION in ${python_versions}; do \
+        echo "Installing Python ${VERSION}..." && \
+        pyenv install ${VERSION} && \
+        pyenv global ${VERSION} && \
+        pyenv rehash && \
+        echo "Finished"; \
+    done;
+RUN pyenv versions
+
+# Install Python libraries.
+ARG cython_version
+ARG cupy_version
+ARG cupy_package_name
+RUN for VERSION in ${python_versions}; do \
+        echo "Installing libraries on Python ${VERSION}..." && \
+        pyenv global ${VERSION} && \
+        pip install -U pip setuptools && \
+        pip install argparse && \
+        pip install Cython==${cython_version} wheel auditwheel && \
+        pip install numpy matplotlib imageio ${cupy_package_name}; \
+    done;
+
+ENV MPLBACKEND Agg
