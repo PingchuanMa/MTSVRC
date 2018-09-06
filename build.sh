@@ -4,5 +4,5 @@ cd build
 #-DCMAKE_PREFIX_PATH=${HOME}/anaconda3 \
 #..
 make -j4 install
-cd ../tensorrt
+cd ../pytorch
 python setup.py install --with-nvvl=../build
