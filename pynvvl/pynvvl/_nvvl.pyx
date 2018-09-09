@@ -19,6 +19,8 @@ cdef extern from "PictureSequence.h":
     
     cdef PictureSequenceHandle nvvl_create_sequence(uint16_t count)
 
+    cdef PictureSequenceHandle nvvl_create_sequence_device(uint16_t count, int device_id)
+
     cdef void nvvl_set_layer(
         PictureSequenceHandle sequence,
         const NVVL_PicLayer* layer,
@@ -53,6 +55,11 @@ cdef extern from "PictureSequence.h":
         size_t c
         size_t n
 
+    cdef struct RGB_Pixel:
+        float r
+        float g
+        float b
+
     cdef struct NVVL_LayerDesc:
 
         uint16_t count
@@ -63,12 +70,17 @@ cdef extern from "PictureSequence.h":
         uint16_t crop_y
         uint16_t scale_width
         uint16_t scale_height
+        uint16_t scale_shorter_side
+        bool center_crop
         bool horiz_flip
         bool normalized
         NVVL_ColorSpace color_space
         NVVL_ChromaUpMethod chroma_up_method
         NVVL_ScaleMethod scale_method
         stride stride
+        RGB_Pixel mean
+        RGB_Pixel std
+        uint16_t test_crops
 
     cdef struct NVVL_PicLayer:
 
@@ -90,7 +102,8 @@ cdef extern from "VideoLoader.h":
     cdef int nvvl_frame_count(VideoLoaderHandle loader, const char* filename)
     
     cdef void nvvl_read_sequence(
-        VideoLoaderHandle loader, const char* filename, int frame, int count)
+        VideoLoaderHandle loader, const char* filename,
+        int frame, int count, int interval, int key_base)
     
     cdef PictureSequenceHandle nvvl_receive_frames(
         VideoLoaderHandle loader, PictureSequenceHandle sequence);
@@ -112,6 +125,125 @@ cdef extern from "VideoLoader.h":
         LogLevel_None
 
     cdef void nvvl_set_log_level(VideoLoaderHandle loader, LogLevel level)
+
+
+cdef class NVVLProcessDesc:
+
+    """Wrapper of NVVL ProcessDesc
+
+    Parameters
+    ----------
+    type : string, optional
+        Type of the output, can be one of "float", "half", or "byte"
+        (Default: "float")
+
+    width, height : int, optional
+        width and height to crop frame to, set to 0 for full frame
+        size (Default: 0)
+
+    scale_width, scale_height : int, optional
+        width and height to scale image to before cropping, set to 0
+        for no scaling (Default: 0)
+
+    normalized : bool, optional
+        Normalize all values to [0, 1] instead of [0, 255] (Default: False)
+
+    random_crop : bool, optional
+        If True, the origin of the crop is randomly choosen. If False,
+        the crop originates at (0, 0).  (Default: False)
+
+    random_flip : bool, optional
+        If True, flip the image horizontally before cropping. (Default: False)
+
+    color_space : enum, optional
+        Color space to return images in, one of "RGB" or "YCbCr". (Default: RGB)
+
+    index_map : list of ints, optional
+        Map from indices into the decoded sequence to indices in this Layer.
+
+        None indicates a 1-to-1 mapping of the frames from sequence to
+        layer.
+
+        For examples, To reverse the frames of a 5 frame sequence, set
+        index_map to [4, 3, 2, 1, 0].
+
+        An index of -1 indicates that the decoded frame should not
+        be used in this layer. For example, to extract just the
+        middle frame from a 5 frame sequence, set index_map to
+        [-1, -1, 0, -1, -1].
+
+        The returned tensors will be sized to fit the maximum index in
+        this array (if it is provided, they will fit the full sequence
+        if it is None).
+
+        (Default: None)
+
+    dimension_order : string, optional
+        Order of dimensions in the returned tensors. Must contain
+        exactly one of 'f', 'c', 'h', and 'w'. 'f' for frames in the
+        sequence, 'c' for channel, 'h' for height, 'w' for width, and
+        'h'. (Default: "fchw")
+
+    """
+
+    cdef NVVL_LayerDesc processing
+
+    def __init__(self, type="float",
+                 width=0, height=0, scale_width=0, scale_height=0,
+                 normalized=False, random_crop=False, random_flip=False,
+                 color_space="RGB", index_map=None, dimension_order="fchw",
+                 center_crop=False, mean=(0., 0., 0.), std=(1., 1., 1.),
+                 scale_shorter_side=0, test_crops=1):
+
+        # if shorter side scale is set, ignore other scale
+        self.width = width
+        self.height = height
+        self.scale_width = scale_width
+        self.scale_height = scale_height
+        self.scale_shorter_side = scale_shorter_side
+        self.normalized = normalized
+
+        if test_crops not in [1, 3, 5]:
+            raise NotImplementedError("Only 1, 3 and 5 crops are supported "
+                                      "while we got {}".format(test_crops))
+        self.test_crops = test_crops
+
+        # if center crop is set, ignore other crop
+        self.center_crop = center_crop
+        self.random_crop = random_crop
+        self.random_flip = random_flip
+
+        self.mean = mean
+        self.std = std
+
+        if index_map:
+            self.index_map = self.ffi.new("int[]", index_map)
+            self.count = max(index_map) + 1
+            self.index_map_length = len(index_map)
+        else:
+            self.index_map = self.ffi.NULL
+            self.count = 0
+            self.index_map_length = 0
+
+        if color_space.lower() == "rgb":
+            self.color_space = lib.ColorSpace_RGB
+            self.channels = 3
+        elif color_space.lower() == "ycbcr":
+            self.color_space = lib.ColorSpace_YCbCr
+            self.channels = 3
+        else:
+            raise ValueError("Unknown color space")
+
+        if type == "float":
+            self.tensor_type = torch.cuda.FloatTensor
+        elif type == "half":
+            self.tensor_type = torch.cuda.HalfTensor
+        elif type == "byte":
+            self.tensor_type = torch.cuda.ByteTensor
+        else:
+            raise ValueError("Unknown type")
+
+        self.dimension_order = dimension_order
 
 
 cdef class NVVLVideoLoader:
