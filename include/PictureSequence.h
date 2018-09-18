@@ -76,7 +76,7 @@ enum NVVL_PicDataType {
 /**
  * Utility for processing RGB pixel format data
  */
-struct RGB_Pixel {
+struct NVVL_RGB_Pixel {
     float r;
     float g;
     float b;
@@ -211,8 +211,8 @@ struct NVVL_LayerDesc {
      * 
      * Only useful for normal RGB color space.
      */
-    struct RGB_Pixel mean;
-    struct RGB_Pixel std;
+    struct NVVL_RGB_Pixel mean;
+    struct NVVL_RGB_Pixel std;
 
     /**
      * Crop number for test.
@@ -387,6 +387,7 @@ class Decoder;
 using ScaleMethod = NVVL_ScaleMethod;
 using ChromaUpMethod = NVVL_ChromaUpMethod;
 using ColorSpace = NVVL_ColorSpace;
+using RGB_Pixel = NVVL_RGB_Pixel;
 using PicLayer = NVVL_PicLayer;
 using LayerDesc = NVVL_LayerDesc;
 
