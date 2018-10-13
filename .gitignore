@@ -119,3 +119,4 @@ output
 .idea/
 .vscode/
 *.whl
+*.tar.bz2

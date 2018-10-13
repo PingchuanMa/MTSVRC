@@ -1,8 +1,8 @@
-ARG CUDA_VERSION=9.0
 FROM nvcr.io/nvidia/tensorrt:18.08-py3
 
 ARG FFMPEG_VERSION=3.4.2
 ARG CMAKE_VERSION=3.11.1
+ENV DEBIAN_FRONTEND noninteractive
 
 # nvcuvid deps
 RUN apt-get update --fix-missing && \
@@ -27,13 +27,14 @@ RUN apt-get update && \
     apt-get autoremove && \
     apt-get clean && \
     aptitude install -y python-dev python3-dev && \
-    # update-alternatives --install /usr/bin/python python /usr/bin/python3 10 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3 10 && \
     # update pip and setuptools
     python -m pip install --upgrade pip setuptools
 
 COPY ./torch-0.4.0-cp35-cp35m-linux_x86_64.whl /software/
 RUN python -m pip install /software/torch-0.4.0-cp35-cp35m-linux_x86_64.whl && rm -rf /software
 RUN python -m pip install cffi torchvision
+COPY ./ffmpeg-$FFMPEG_VERSION.tar.bz2 /tmp
 
 # minimal ffmpeg from source
 RUN apt-get install -y \
@@ -41,8 +42,7 @@ RUN apt-get install -y \
       libx264-148 libx264-dev \
       libx265-79 libx265-dev \
       pkg-config && \
-    cd /tmp && wget -q http://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.bz2 && \
-    tar xf ffmpeg-$FFMPEG_VERSION.tar.bz2 && \
+    cd /tmp && tar xf ffmpeg-$FFMPEG_VERSION.tar.bz2 && \
     rm ffmpeg-$FFMPEG_VERSION.tar.bz2 && \
     cd ffmpeg-$FFMPEG_VERSION && \
     ./configure \
@@ -119,4 +119,4 @@ RUN rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install scipy
 
-RUN mkdir /workspace && cd /workspace && git clone http://gitlab.sz.sensetime.com/mapingchuan/nvvl.git
+RUN mkdir /nvvl && cd /nvvl && git clone http://gitlab.sz.sensetime.com/mapingchuan/nvvl.git
