@@ -120,3 +120,4 @@ output
 .vscode/
 *.whl
 *.tar.bz2
+*.tar.gz
