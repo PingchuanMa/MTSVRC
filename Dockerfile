@@ -83,10 +83,9 @@ ARG OPENCV_VERSION=3.4.0
 ARG OPENCV_CUDA_GENERATION=Auto
 
 # paired down OpenCV build
+COPY ./$OPENCV_VERSION.tar.gz /tmp
 RUN apt-get install -y wget && \
-    cd /tmp && \
-    wget https://github.com/opencv/opencv/archive/$OPENCV_VERSION.tar.gz && \
-    tar xf $OPENCV_VERSION.tar.gz && \
+    cd /tmp && tar xf $OPENCV_VERSION.tar.gz && \
     rm $OPENCV_VERSION.tar.gz
 
 RUN cd /tmp/opencv-$OPENCV_VERSION && \
