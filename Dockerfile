@@ -27,7 +27,7 @@ RUN apt-get update && \
     apt-get autoremove && \
     apt-get clean && \
     aptitude install -y python-dev python3-dev && \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3 10 && \
+    # update-alternatives --install /usr/bin/python python /usr/bin/python3 10 && \
     # update pip and setuptools
     python -m pip install --upgrade pip setuptools
 
