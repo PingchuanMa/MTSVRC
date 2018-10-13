@@ -79,6 +79,33 @@ RUN apt-get install -y pkg-config doxygen wget && \
     apt-get purge -y wget && \
     apt-get autoremove -y
 
+ARG OPENCV_VERSION=3.4.0
+ARG OPENCV_CUDA_GENERATION=Auto
+
+# paired down OpenCV build
+RUN apt-get install -y wget && \
+    cd /tmp && \
+    wget https://github.com/opencv/opencv/archive/$OPENCV_VERSION.tar.gz && \
+    tar xf $OPENCV_VERSION.tar.gz && \
+    rm $OPENCV_VERSION.tar.gz
+
+RUN cd /tmp/opencv-$OPENCV_VERSION && \
+    mkdir build && cd build && \
+    cmake -DCUDA_GENERATION=$OPENCV_CUDA_GENERATION \
+      -DCMAKE_BUILD_TYPE=RELEASE \
+      $(for m in cudabgsegm cudacodec cudafeatures2d \
+      cudafilters cudalegacy cudaoptflow cudaobjdetect \
+      cudawarping dnn features2d flann highgui ml \
+      objdetect photo python_bindings_generator shape \
+      superres ts video videoio; do echo -DBUILD_opencv_$m=OFF; done) \
+      $(for f in WEBP TIFF OPENEXR JASPER; do echo -DWITH_$f=OFF; done) \
+      .. && \
+    make -j8 && make install && \
+    ldconfig && \
+    cd /tmp && rm -rf opencv-$OPENCV_VERSION && \
+    apt-get purge -y wget && \
+    apt-get autoremove -y
+
 # nvidia-docker only provides libraries for runtime use, not for
 # development, to hack it so we can develop inside a container (not a
 # normal or supported practice), we need to make an unversioned
@@ -90,4 +117,6 @@ RUN ln -s /usr/local/nvidia/lib64/libnvcuvid.so.1 /usr/local/lib/libnvcuvid.so &
 
 RUN rm -rf /var/lib/apt/lists/*
 
-RUN mkdir /workspace && cd /workspace && git clone https://github.com/Pika7ma/nvvl.git
+RUN python -m pip install scipy
+
+RUN mkdir /workspace && cd /workspace && git clone http://gitlab.sz.sensetime.com/mapingchuan/nvvl.git
