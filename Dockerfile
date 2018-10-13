@@ -1,5 +1,5 @@
 ARG CUDA_VERSION=9.0
-FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu16.04
+FROM nvcr.io/nvidia/tensorrt:18.08-py3
 
 ARG FFMPEG_VERSION=3.4.2
 ARG CMAKE_VERSION=3.11.1
@@ -31,8 +31,8 @@ RUN apt-get update && \
     # update pip and setuptools
     python -m pip install --upgrade pip setuptools
 
-COPY ./torch-0.3.1-cp35-cp35m-linux_x86_64.whl /software/
-RUN python -m pip install /software/torch-0.3.1-cp35-cp35m-linux_x86_64.whl && rm -rf /software
+COPY ./torch-0.4.0-cp35-cp35m-linux_x86_64.whl /software/
+RUN python -m pip install /software/torch-0.4.0-cp35-cp35m-linux_x86_64.whl && rm -rf /software
 RUN python -m pip install cffi torchvision
 
 # minimal ffmpeg from source
