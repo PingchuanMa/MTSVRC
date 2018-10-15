@@ -56,7 +56,7 @@ RUN apt-get install -y \
     --enable-gpl --enable-libx264 --enable-libx265 --enable-zlib \
     --enable-indev=lavfi \
     --enable-swresample --enable-ffmpeg \
-    --enable-swscale --enable-filter=scale,testsrc \
+    --enable-swscale --enable-filter=scale,testsrc,crop \
     --enable-muxer=mp4,matroska,image2 \
     --enable-cuvid --enable-nvenc --enable-cuda \
     --enable-decoder=h264,h264_cuvid,hevc,hevc_cuvid,png,mjpeg,rawvideo \
