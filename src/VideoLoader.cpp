@@ -433,15 +433,15 @@ void VideoLoader::impl::read_file() {
         auto key_base_frame_num = 0;
         auto count = req.count;
         auto first_frame = req.frame;
-        while (req.count > 0) {
+        while (req.count + 4 > 0) {
             auto ret = av_read_frame(file.fmt_ctx_.get(), &raw_pkt);
             if (ret < 0) {
                 log_.info() << "An EOF reached after " << key_base_frame_num <<
                                "+" << frame_num << " frames read" <<
                                "-----------------------------" << std::endl;
                 seek(file, first_frame);
-                key_head = 0;
-                req.key_base = 0;
+                // key_head = 0;
+                // req.key_base = 0;
                 // if (file.frame_count_ < (count - key_base_frame_num) * req.interval + 20) {
                 //     req.interval = (int)((file.frame_count_ - 20) / (count - key_base_frame_num));
                 //     if (req.interval <= 0) {
@@ -466,37 +466,45 @@ void VideoLoader::impl::read_file() {
             // std::cout << pkt->pts << " " << file.stream_base_.num << " " << file.stream_base_.den << " "
             //           << file.frame_base_.num << " " << file.frame_base_.den << std::endl;
 
-            file.last_frame_ = frame;
+            // file.last_frame_ = frame;
             auto key = pkt->flags & AV_PKT_FLAG_KEY;
+
+            if (key) {
+                req.frame++;
+                req.count--;
+            } else {
+                // seek_forward(file, frame, first_frame);
+                continue;
+            }
 
             // The following assumes that all frames between key frames
             // have pts between the key frames.  Is that true?
-            if (req.key_base > 0) {
-                if (key) {
-                    key_head = frame;
-                    key_base = req.key_base;
-                } else if (key_base <= 0) {
-                    continue;
-                }
-                key_base--;
-                req.frame++;
-                req.count--;
-                key_base_frame_num++;
-            } else if (frame >= key_head && req.key_base <= 0) {
-                if (key) {
-                    key_head = frame;
-                    req.frame = key_base_frame_num + std::max((frame_num - 10), 0) / req.interval + 1;
-                    req.count = count - req.frame;
-                } else {
-                    // A hueristic so we don't go way over... what should "20" be?
-                    if (frame_num > (count - key_base_frame_num) * req.interval + 10) {
-                        // This should end the loop
-                        req.frame = count;
-                        req.count = 0;
-                    }
-                }
-                frame_num++;
-            }
+            // if (req.key_base > 0) {
+            //     if (key) {
+            //         key_head = frame;
+            //         key_base = req.key_base;
+            //     } else if (key_base <= 0) {
+            //         continue;
+            //     }
+            //     key_base--;
+            //     req.frame++;
+            //     req.count--;
+            //     key_base_frame_num++;
+            // } else if (frame >= key_head && req.key_base <= 0) {
+            //     if (key) {
+            //         key_head = frame;
+            //         req.frame = key_base_frame_num + std::max((frame_num - 10), 0) / req.interval + 1;
+            //         req.count = count - req.frame;
+            //     } else {
+            //         // A hueristic so we don't go way over... what should "20" be?
+            //         if (frame_num > (count - key_base_frame_num) * req.interval + 10) {
+            //             // This should end the loop
+            //             req.frame = count;
+            //             req.count = 0;
+            //         }
+            //     }
+            //     frame_num++;
+            // }
 
             log_.info() << device_id_ << ": Sending " << (key ? "  key " : "nonkey")
                         << " frame " << frame << " to the decoder."

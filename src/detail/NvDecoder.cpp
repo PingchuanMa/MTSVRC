@@ -353,23 +353,26 @@ int NvDecoder::handle_display_(CUVIDPARSERDISPINFO* disp_info) {
     //     return 1;
     // }
 
-    if (current_recv_.prev_frame > frame && current_recv_.key_base > 0) {
-        current_recv_.key_base = 0;
-    }
+    // if (current_recv_.prev_frame > frame && current_recv_.key_base > 0) {
+    //     current_recv_.key_base = 0;
+    // }
 
-    if (current_recv_.key_base <= 0) {
-        if (current_recv_.frame <= 0) {
-            current_recv_.frame = current_recv_.interval - 1;
-            current_recv_.count--;
-        } else {
-            current_recv_.frame--;
-            return 1;
-        }
-    } else {
-        current_recv_.count--;
-    }
+    // if (current_recv_.key_base <= 0) {
+    //     if (current_recv_.frame <= 0) {
+    //         current_recv_.frame = current_recv_.interval - 1;
+    //         current_recv_.count--;
+    //     } else {
+    //         current_recv_.frame--;
+    //         return 1;
+    //     }
+    // } else {
+    //     current_recv_.count--;
+    // }
 
-    current_recv_.prev_frame = frame;
+    // current_recv_.prev_frame = frame;
+
+    current_recv_.frame++;
+    current_recv_.count--;
 
     log_.info() << "\e[1mGoing ahead with frame " << frame
                 << " wanted count: " << current_recv_.count
