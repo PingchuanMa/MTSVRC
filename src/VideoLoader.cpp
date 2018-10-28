@@ -427,7 +427,7 @@ void VideoLoader::impl::read_file() {
             auto ret = av_read_frame(file.fmt_ctx_.get(), &raw_pkt);
             if (ret < 0) {
                 seek(file, first_frame);
-                if (num_rum == 0 && num_frame <= 1) {
+                if (num_run == 0 && num_frame <= 1) {
                     sick_video = true;
                 }
                 num_frame = ++num_run % 2;
