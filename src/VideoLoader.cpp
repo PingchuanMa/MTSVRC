@@ -473,7 +473,7 @@ void VideoLoader::impl::read_file() {
                     vid_decoder_->decode_packet(fpkt.get());
                 }
                 if (ret != AVERROR(EAGAIN)) {
-                    seek(file, first_frame)
+                    seek(file, first_frame);
                     continue;
                 }
 #else
