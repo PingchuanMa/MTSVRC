@@ -263,14 +263,6 @@ VideoLoader::impl::OpenFile& VideoLoader::impl::get_or_open_file(std::string fil
                     << width_ << "x" << height_ << " or codec "
                     << codec_id << " != " << codec_id_ << ")";
                 throw std::runtime_error(err.str());
-                // width_ = codecpar(stream)->width;
-                // height_ = codecpar(stream)->height;
-                // codec_id_ = codec_id;
-                // vid_decoder_->finish();
-                // vid_decoder_.reset(
-                //     new detail::NvDecoder(device_id_, log_,
-                //                         codecpar(stream),
-                //                         stream->time_base));
             }
         }
         file.stream_base_ = stream->time_base;
@@ -419,6 +411,7 @@ void VideoLoader::impl::read_file() {
         // correct key frame, we've flushed the decoder, so it needs
         // another key frame to start decoding again
         seek(file, req.frame);
+        auto step = 4;
         auto num_run = 0;
         auto num_frame = 0;
         auto first_frame = req.frame;
@@ -427,10 +420,10 @@ void VideoLoader::impl::read_file() {
             auto ret = av_read_frame(file.fmt_ctx_.get(), &raw_pkt);
             if (ret < 0) {
                 seek(file, first_frame);
-                if (num_run == 0 && num_frame <= 1) {
+                if (num_run == 0 && num_frame < step) {
                     sick_video = true;
                 }
-                num_frame = ++num_run % 2;
+                num_frame = ++num_run % step;
                 continue;
             }
             auto pkt = pkt_ptr(&raw_pkt, av_packet_unref);
@@ -448,11 +441,11 @@ void VideoLoader::impl::read_file() {
 
             auto key = pkt->flags & AV_PKT_FLAG_KEY;
 
-            if (key && (num_run >= 2 || ++num_frame % 2 == 1 || sick_video)) {
+            if (key && (num_run >= step || sick_video || ++num_frame % step == num_run)) {
                 req.frame++;
                 req.count--;
             } else {
-                // seek_forward(file, frame, first_frame);
+                seek_forward(file, frame, first_frame);
                 continue;
             }
 
@@ -480,7 +473,7 @@ void VideoLoader::impl::read_file() {
                     vid_decoder_->decode_packet(fpkt.get());
                 }
                 if (ret != AVERROR(EAGAIN)) {
-                    seek(file, first_frame);
+                    seek(file, first_frame)
                     continue;
                 }
 #else
