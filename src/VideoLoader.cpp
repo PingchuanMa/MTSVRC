@@ -411,7 +411,7 @@ void VideoLoader::impl::read_file() {
         // correct key frame, we've flushed the decoder, so it needs
         // another key frame to start decoding again
         seek(file, req.frame);
-        auto step = 3;
+        auto step = 4;
         auto num_run = 0;
         auto num_frame = 0;
         auto first_frame = req.frame;

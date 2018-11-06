@@ -118,4 +118,4 @@ RUN ln -s /usr/local/nvidia/lib64/libnvcuvid.so.1 /usr/local/lib/libnvcuvid.so &
 
 RUN rm -rf /var/lib/apt/lists/*
 
-RUN cd /workspace && git clone -b superjump-keyframe http://gitlab.sz.sensetime.com/mapingchuan/nvvl.git
+RUN cd / && cd / && cd /workspace && git clone -b superjump-keyframe http://gitlab.sz.sensetime.com/mapingchuan/nvvl.git
