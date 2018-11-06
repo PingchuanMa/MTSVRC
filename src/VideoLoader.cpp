@@ -411,7 +411,7 @@ void VideoLoader::impl::read_file() {
         // correct key frame, we've flushed the decoder, so it needs
         // another key frame to start decoding again
         seek(file, req.frame);
-        auto step = 4;
+        auto step = 3;
         auto num_run = 0;
         auto num_frame = 0;
         auto first_frame = req.frame;
@@ -423,7 +423,8 @@ void VideoLoader::impl::read_file() {
                 if (num_run == 0 && num_frame < step) {
                     sick_video = true;
                 }
-                num_frame = ++num_run % step;
+                num_frame = 0;
+                ++num_run;
                 continue;
             }
             auto pkt = pkt_ptr(&raw_pkt, av_packet_unref);
@@ -441,11 +442,11 @@ void VideoLoader::impl::read_file() {
 
             auto key = pkt->flags & AV_PKT_FLAG_KEY;
 
-            if (key && (num_run >= step || sick_video || ++num_frame % step == num_run)) {
+            if (key && (num_run >= step || sick_video || num_frame++ % step == num_run)) {
                 req.frame++;
                 req.count--;
             } else {
-                seek_forward(file, frame, first_frame);
+                // seek_forward(file, frame, first_frame);
                 continue;
             }
 
