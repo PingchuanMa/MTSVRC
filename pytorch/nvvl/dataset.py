@@ -457,6 +457,8 @@ class SingleVideoLoader(object):
             self.init_loader = 0
             self.loader_list = [lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level) for _ in range(max_loader)]
             self.hit_number = np.zeros((max_loader,))
+        
+        self.tensor = self._create_tensor(False)
 
         # self.loader = lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level)
 
@@ -503,8 +505,7 @@ class SingleVideoLoader(object):
         lib.nvvl_read_sequence(loader, str.encode(file_dir),
                                self.start_frame, self.sequence_length,
                                interval, key_base, self.jump_step)
-        tensor = self._create_tensor(use_batch)
-        seq = self._start_receive(loader, tensor, use_batch)
+        seq = self._start_receive(loader, self.tensor, use_batch)
         self._finish_receive(seq)
         if self.use_pool:
             self.run_count += 1
@@ -513,7 +514,7 @@ class SingleVideoLoader(object):
                 self.hit_number /= self.clear_freq
         else:
             lib.nvvl_destroy_video_loader(loader)
-        return tensor
+        return self.tensor
 
     def _get_layer_desc(self, desc):
         d = desc.desc()
