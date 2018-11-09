@@ -82,7 +82,7 @@ class VideoLoader::impl {
     impl(int device_id, LogLevel log_level);
     int frame_count(std::string filename);
     Size size() const;
-    void read_sequence(std::string filename, int frame, int count=1, int interval=1, int key_base=0);
+    void read_sequence(std::string filename, int frame, int count=1, int interval=1, int key_base=0, int jump_step=1);
     void receive_frames(PictureSequence& sequence);
     VideoLoaderStats get_stats() const;
     void reset_stats();
@@ -181,12 +181,12 @@ int VideoLoader::impl::frame_count(std::string filename) {
 }
 
 
-void VideoLoader::read_sequence(std::string filename, int frame, int count, int interval, int key_base) {
-    pImpl->read_sequence(filename, frame, count, interval, key_base);
+void VideoLoader::read_sequence(std::string filename, int frame, int count, int interval, int key_base, int jump_step) {
+    pImpl->read_sequence(filename, frame, count, interval, key_base, jump_step);
 }
 
-void VideoLoader::impl::read_sequence(std::string filename, int frame, int count, int interval, int key_base) {
-    auto req = detail::FrameReq{filename, frame, count, interval, key_base, -1};
+void VideoLoader::impl::read_sequence(std::string filename, int frame, int count, int interval, int key_base, int jump_step) {
+    auto req = detail::FrameReq{filename, frame, count, interval, key_base, -1, jump_step};
     // give both reader thread and decoder a copy of what is coming
     send_queue_.push(req);
 }
@@ -411,7 +411,7 @@ void VideoLoader::impl::read_file() {
         // correct key frame, we've flushed the decoder, so it needs
         // another key frame to start decoding again
         seek(file, req.frame);
-        auto step = 4;
+        auto step = req.jump_step;
         auto num_run = 0;
         auto num_frame = 0;
         auto first_frame = req.frame;
@@ -646,9 +646,9 @@ int nvvl_frame_count(VideoLoaderHandle loader, const char* filename) {
 }
 
 void nvvl_read_sequence(VideoLoaderHandle loader, const char* filename,
-                        int frame, int count, int interval, int key_base) {
+                        int frame, int count, int interval, int key_base, int jump_step) {
     auto vl = reinterpret_cast<NVVL::VideoLoader*>(loader);
-    vl->read_sequence(filename, frame, count, interval, key_base);
+    vl->read_sequence(filename, frame, count, interval, key_base, jump_step);
 }
 
 PictureSequenceHandle nvvl_receive_frames(VideoLoaderHandle loader, PictureSequenceHandle sequence) {

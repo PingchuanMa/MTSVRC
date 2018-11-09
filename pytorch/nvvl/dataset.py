@@ -422,12 +422,13 @@ class SingleVideoLoader(object):
     """
     def __init__(self, sequence_length, start_frame=0, device_id=0,
                  processing=None, log_level="warn", max_loader=20,
-                 clear_freq=500, use_pool=True):
+                 clear_freq=500, use_pool=True, jump_step=1):
         self.ffi = lib._ffi
         self.sequence_length = sequence_length
         self.device_id = device_id
         self.start_frame = start_frame
         self.use_pool = use_pool
+        self.jump_step = jump_step
         if use_pool:
             self.max_loader = max_loader
             self.clear_freq = clear_freq
@@ -501,7 +502,7 @@ class SingleVideoLoader(object):
             loader = lib.nvvl_create_video_loader_with_log(self.device_id, self.log_level)
         lib.nvvl_read_sequence(loader, str.encode(file_dir),
                                self.start_frame, self.sequence_length,
-                               interval, key_base)
+                               interval, key_base, self.jump_step)
         tensor = self._create_tensor(use_batch)
         seq = self._start_receive(loader, tensor, use_batch)
         self._finish_receive(seq)

@@ -94,7 +94,7 @@ int nvvl_frame_count(VideoLoaderHandle loader, const char* filename);
  * Wrapper for VideoLoader::read_sequence()
  */
 void nvvl_read_sequence(VideoLoaderHandle loader, const char* filename,
-                        int frame, int count, int interval, int key_base);
+                        int frame, int count, int interval, int key_base, int jump_step);
 
 /**
  * Wrapper for VideoLoader::receive_frames()
@@ -177,7 +177,7 @@ class VideoLoader {
      * \param count the number of frames to read
      */
     void read_sequence(std::string filename, int frame, int count=1,
-                       int interval=1, int key_base=0);
+                       int interval=1, int key_base=0, int jump_step=1);
 
     /**
      * Enqueue transfer of the next set of frames into a

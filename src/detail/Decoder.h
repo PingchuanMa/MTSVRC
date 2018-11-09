@@ -29,6 +29,7 @@ struct FrameReq {
     int interval;
     int key_base;
     int prev_frame;
+    int jump_step;
 };
 
 class CUStream {
